@@ -1,10 +1,5 @@
-import { describe, expect, it } from "vitest";
-import {
-  Aikyo,
-  HighestScorePolicy,
-  InMemoryConversation,
-  type AikyoAgent,
-} from "../src/index.js";
+import { describe, expect, it } from "vite-plus/test";
+import { Aikyo, HighestScorePolicy, InMemoryConversation, type AikyoAgent } from "../src/index.js";
 
 function agent(id: string, score: number, content = id): AikyoAgent {
   return {

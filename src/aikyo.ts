@@ -17,8 +17,18 @@ export interface TurnError {
 }
 
 export type TurnResult =
-  | { readonly status: "spoken"; readonly agentId: string; readonly message: AgentMessage; readonly snapshot: ConversationSnapshot; readonly errors: readonly TurnError[] }
-  | { readonly status: "idle"; readonly snapshot: ConversationSnapshot; readonly errors: readonly TurnError[] };
+  | {
+      readonly status: "spoken";
+      readonly agentId: string;
+      readonly message: AgentMessage;
+      readonly snapshot: ConversationSnapshot;
+      readonly errors: readonly TurnError[];
+    }
+  | {
+      readonly status: "idle";
+      readonly snapshot: ConversationSnapshot;
+      readonly errors: readonly TurnError[];
+    };
 
 export interface AikyoOptions {
   readonly agents: readonly AikyoAgent[];
@@ -62,7 +72,8 @@ export class Aikyo {
         try {
           return await this.#evaluate(signal);
         } catch (error) {
-          if (!(error instanceof RevisionConflictError) || attempt >= this.#revisionRetries) throw error;
+          if (!(error instanceof RevisionConflictError) || attempt >= this.#revisionRetries)
+            throw error;
         }
       }
     } finally {
@@ -76,16 +87,18 @@ export class Aikyo {
     const errors: TurnError[] = [];
     const bids = new Map<string, TurnBid>();
 
-    const bidResults = await Promise.all([...this.#agents].map(async ([id, agent]) => {
-      try {
-        const bid = await agent.wantsToSpeak(snapshot);
-        if (!Number.isFinite(bid.score)) throw new TypeError("TurnBid.score must be finite");
-        return [id, bid] as const;
-      } catch (error) {
-        this.#record(errors, { agentId: id, phase: "bid", error });
-        return null;
-      }
-    }));
+    const bidResults = await Promise.all(
+      [...this.#agents].map(async ([id, agent]) => {
+        try {
+          const bid = await agent.wantsToSpeak(snapshot);
+          if (!Number.isFinite(bid.score)) throw new TypeError("TurnBid.score must be finite");
+          return [id, bid] as const;
+        } catch (error) {
+          this.#record(errors, { agentId: id, phase: "bid", error });
+          return null;
+        }
+      }),
+    );
     // Preserve configured agent order so policies can use deterministic tie-breaking.
     for (const result of bidResults) if (result) bids.set(...result);
 
