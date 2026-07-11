@@ -10,19 +10,26 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "demo": "pnpm run build && pnpm --filter aikyo-minimal-demo start",
     "publish:jsr": "jsr publish",
     "publish:jsr:dry-run": "jsr publish --dry-run --allow-dirty",
-    "test": "pnpm run build && node --test test/*.test.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
     "jsr": "^0.13.5",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.10"
   },
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "license": "MIT"
 }
