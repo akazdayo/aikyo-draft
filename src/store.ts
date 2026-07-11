@@ -7,7 +7,10 @@ import type {
 } from "./types.js";
 
 export class RevisionConflictError extends Error {
-  constructor(readonly expected: number, readonly actual: number) {
+  constructor(
+    readonly expected: number,
+    readonly actual: number,
+  ) {
     super(`Conversation revision changed (expected ${expected}, actual ${actual})`);
     this.name = "RevisionConflictError";
   }
@@ -19,12 +22,14 @@ export class InMemoryConversation implements ConversationStore {
   #context: unknown;
   #revision = 0;
 
-  constructor(input: {
-    messages?: readonly Message[];
-    participants?: readonly Participant[];
-    context?: unknown;
-    revision?: number;
-  } = {}) {
+  constructor(
+    input: {
+      messages?: readonly Message[];
+      participants?: readonly Participant[];
+      context?: unknown;
+      revision?: number;
+    } = {},
+  ) {
     this.#messages = [...(input.messages ?? [])];
     this.#participants = [...(input.participants ?? [])];
     this.#context = input.context;
@@ -37,9 +42,7 @@ export class InMemoryConversation implements ConversationStore {
       participants: Object.freeze([...this.#participants]),
       revision: this.#revision,
     };
-    return Object.freeze(
-      this.#context === undefined ? base : { ...base, context: this.#context },
-    );
+    return Object.freeze(this.#context === undefined ? base : { ...base, context: this.#context });
   }
 
   append(message: AgentMessage, expectedRevision: number): void {

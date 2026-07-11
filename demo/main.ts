@@ -1,12 +1,7 @@
 import "dotenv/config";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { generateText } from "ai";
-import {
-  Aikyo,
-  InMemoryConversation,
-  type AikyoAgent,
-  type ConversationSnapshot,
-} from "aikyo";
+import { Aikyo, InMemoryConversation, type AikyoAgent, type ConversationSnapshot } from "aikyo";
 
 const apiKey = process.env.OPENROUTER_API_KEY;
 if (!apiKey) throw new Error("demo/.env に OPENROUTER_API_KEY を設定してください");
@@ -26,7 +21,9 @@ async function chat(instructions: string, prompt: string): Promise<string> {
 }
 
 const history = (snapshot: ConversationSnapshot): string =>
-  snapshot.messages.map((message) => `${message.participantId}: ${String(message.content)}`).join("\n");
+  snapshot.messages
+    .map((message) => `${message.participantId}: ${String(message.content)}`)
+    .join("\n");
 
 class OpenAICompatibleAgent implements AikyoAgent {
   constructor(

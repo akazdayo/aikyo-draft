@@ -2,34 +2,35 @@
   "name": "aikyo",
   "version": "0.1.0",
   "description": "Turn coordination core for multi-agent conversations",
+  "license": "MIT",
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "type": "module",
-  "packageManager": "pnpm@11.5.2",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "README.md"
-  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "demo": "pnpm run build && pnpm --filter aikyo-minimal-demo start",
     "publish:jsr": "jsr publish",
     "publish:jsr:dry-run": "jsr publish --dry-run --allow-dirty",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vp test run",
+    "test:watch": "vp test",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
     "jsr": "^0.13.5",
     "typescript": "^5.9.2",
-    "vitest": "^4.1.10"
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
   },
   "engines": {
     "node": ">=20"
   },
-  "license": "MIT"
+  "packageManager": "pnpm@11.5.2"
 }
