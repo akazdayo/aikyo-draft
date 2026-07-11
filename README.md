@@ -2,16 +2,6 @@
 
 複数の Agent から発話意欲を集め、次の話者を一人だけ選ぶ TypeScript ライブラリです。
 
-## インストール
-
-```sh
-# Deno
-deno add jsr:@akazdayo/aikyo
-
-# Node.js
-pnpm add jsr:@akazdayo/aikyo
-```
-
 ## 使い方
 
 ```ts
@@ -44,11 +34,4 @@ pnpm install
 cp demo/.env.example demo/.env
 # demo/.env に OPENROUTER_API_KEY を設定
 pnpm demo
-```
-
-## 公開
-
-```sh
-pnpm publish:jsr:dry-run
-pnpm publish:jsr
 ```
