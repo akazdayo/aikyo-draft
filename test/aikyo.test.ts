@@ -161,9 +161,7 @@ describe("Aikyo", () => {
       policy: { select: () => "missing" },
     });
 
-    await expect(aikyo.turn()).rejects.toThrow(
-      "Policy selected an ineligible agent: missing",
-    );
+    await expect(aikyo.turn()).rejects.toThrow("Policy selected an ineligible agent: missing");
   });
 
   it("throws after revision retries are exhausted", async () => {
@@ -179,11 +177,13 @@ describe("Aikyo", () => {
     const candidate = agent("a", 1);
     candidate.wantsToSpeak = async () => ({ score: ++bids });
 
-    await expect(new Aikyo({
-      agents: [candidate],
-      store,
-      revisionRetries: 1,
-    }).turn()).rejects.toThrow("Conversation revision changed");
+    await expect(
+      new Aikyo({
+        agents: [candidate],
+        store,
+        revisionRetries: 1,
+      }).turn(),
+    ).rejects.toThrow("Conversation revision changed");
     expect(bids).toBe(2);
   });
 
@@ -212,25 +212,30 @@ describe("InMemoryConversation", () => {
   });
 
   it("rejects duplicate participant ids", () => {
-    expect(() => new InMemoryConversation({
-      participants: [{ id: "a" }, { id: "a" }],
-    })).toThrow("Duplicate participant id: a");
+    expect(
+      () =>
+        new InMemoryConversation({
+          participants: [{ id: "a" }, { id: "a" }],
+        }),
+    ).toThrow("Duplicate participant id: a");
   });
 
   it("rejects an initial message from an unknown participant", () => {
-    expect(() => new InMemoryConversation({
-      participants: [{ id: "a" }],
-      messages: [{ participantId: "missing", content: "hello" }],
-    })).toThrow("Unknown participant id: missing");
+    expect(
+      () =>
+        new InMemoryConversation({
+          participants: [{ id: "a" }],
+          messages: [{ participantId: "missing", content: "hello" }],
+        }),
+    ).toThrow("Unknown participant id: missing");
   });
 
   it("rejects an appended message from an unknown participant without advancing revision", () => {
     const store = new InMemoryConversation({ participants: [{ id: "a" }] });
 
-    expect(() => store.append(
-      { participantId: "missing", content: "hello" },
-      0,
-    )).toThrow("Unknown participant id: missing");
+    expect(() => store.append({ participantId: "missing", content: "hello" }, 0)).toThrow(
+      "Unknown participant id: missing",
+    );
     expect(store.snapshot()).toMatchObject({ messages: [], revision: 0 });
   });
 });
