@@ -20,28 +20,38 @@ export interface ConversationSnapshot {
   readonly revision: number;
 }
 
-export interface TurnBid {
-  readonly score: number;
-  readonly abstain?: boolean;
-}
-
 export interface TurnContext {
   readonly snapshot: ConversationSnapshot;
-  readonly bid: TurnBid;
   readonly signal: AbortSignal;
 }
 
 export interface AikyoAgent {
   readonly id: string;
-  wantsToSpeak(snapshot: ConversationSnapshot): Promise<TurnBid>;
+  /** What distinguishes this speaker. Jev uses this when choosing the next turn. */
+  readonly description?: string;
   intoTurn(context: TurnContext): Promise<AgentMessage>;
 }
 
-export interface TurnPolicy {
+export interface SpeakerCandidate {
+  readonly id: string;
+  readonly description?: string;
+}
+
+export interface SpeakerSelection {
+  readonly agentId: string | null;
+  readonly confidence: number;
+  readonly probabilities: Readonly<Record<string, number>>;
+  readonly idleProbability: number;
+  readonly model: string;
+  readonly inputTokens: number;
+}
+
+export interface SpeakerSelector {
   select(input: {
-    snapshot: ConversationSnapshot;
-    bids: ReadonlyMap<string, TurnBid>;
-  }): string | null;
+    readonly snapshot: ConversationSnapshot;
+    readonly candidates: readonly SpeakerCandidate[];
+    readonly signal: AbortSignal;
+  }): Promise<SpeakerSelection>;
 }
 
 export interface ConversationStore {

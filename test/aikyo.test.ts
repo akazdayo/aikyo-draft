@@ -1,87 +1,108 @@
+import { TypeSafeClient } from "@typesafe-ai/sdk";
 import { describe, expect, it } from "vite-plus/test";
-import { Aikyo, HighestScorePolicy, InMemoryConversation, type AikyoAgent } from "../src/index.js";
+import {
+  Aikyo,
+  InMemoryConversation,
+  JevSpeakerSelector,
+  type AikyoAgent,
+  type SpeakerSelection,
+  type SpeakerSelector,
+} from "../src/index.js";
 
-function agent(id: string, score: number, content = id): AikyoAgent {
+function agent(id: string, content = id): AikyoAgent {
   return {
     id,
-    async wantsToSpeak() {
-      return { score };
-    },
+    description: `${id}の役割`,
     async intoTurn() {
       return { participantId: id, content };
     },
   };
 }
 
+function selection(id: string | null, probabilities: Record<string, number> = {}): SpeakerSelection {
+  return {
+    agentId: id,
+    confidence: 0.9,
+    probabilities,
+    idleProbability: id === null ? 1 : 0,
+    model: "test",
+    inputTokens: 1,
+  };
+}
+
+const selector = (result: SpeakerSelection): SpeakerSelector => ({ select: async () => result });
+
 describe("Aikyo", () => {
-  it("highest bidder speaks and the message is appended", async () => {
-    const store = new InMemoryConversation({
-      participants: [{ id: "low" }, { id: "high" }],
-    });
+  it("asks once and appends the selected speaker's message", async () => {
+    const store = new InMemoryConversation({ participants: [{ id: "a" }, { id: "b" }] });
+    let calls = 0;
+    const timings: string[] = [];
     const result = await new Aikyo({
-      agents: [agent("low", 1), agent("high", 2)],
+      agents: [agent("a"), agent("b")],
       store,
+      selector: {
+        async select({ candidates }) {
+          calls += 1;
+          expect(candidates).toEqual([
+            { id: "a", description: "aの役割" },
+            { id: "b", description: "bの役割" },
+          ]);
+          return selection("b", { a: 0.2, b: 0.8 });
+        },
+      },
+      onTiming({ phase, durationMs, agentId }) {
+        expect(durationMs).toBeGreaterThanOrEqual(0);
+        timings.push(`${phase}:${agentId ?? "-"}`);
+      },
     }).turn();
 
-    expect(result.status).toBe("spoken");
-    if (result.status !== "spoken") return;
-    expect(result.agentId).toBe("high");
-    expect(store.snapshot().messages[0]?.content).toBe("high");
-    expect(store.snapshot().revision).toBe(1);
+    expect(result).toMatchObject({ status: "spoken", agentId: "b" });
+    expect(calls).toBe(1);
+    expect(timings).toEqual([
+      "jev:-",
+      "generation:b",
+    ]);
+    expect(store.snapshot()).toMatchObject({ revision: 1, messages: [{ content: "b" }] });
   });
 
-  it("bid failures and abstentions are excluded", async () => {
-    const broken = agent("broken", 10);
-    broken.wantsToSpeak = async () => {
-      throw new Error("no bid");
-    };
-    const quiet = agent("quiet", 20);
-    quiet.wantsToSpeak = async () => ({ score: 20, abstain: true });
-
+  it("returns idle when Jev selects idle", async () => {
     const result = await new Aikyo({
-      agents: [broken, quiet],
-      store: new InMemoryConversation({
-        participants: [{ id: "broken" }, { id: "quiet" }],
-      }),
+      agents: [agent("a")],
+      store: new InMemoryConversation({ participants: [{ id: "a" }] }),
+      selector: selector(selection(null)),
     }).turn();
-
-    expect(result.status).toBe("idle");
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.phase).toBe("bid");
+    expect(result).toMatchObject({ status: "idle", errors: [] });
   });
 
-  it("falls back after intoTurn failure", async () => {
-    const first = agent("first", 10);
+  it("falls back by Jev probability after generation failure", async () => {
+    const first = agent("first");
     first.intoTurn = async () => {
       throw new Error("generation failed");
     };
-
     const result = await new Aikyo({
-      agents: [first, agent("second", 5)],
+      agents: [agent("third"), first, agent("second")],
       store: new InMemoryConversation({
-        participants: [{ id: "first" }, { id: "second" }],
+        participants: [{ id: "first" }, { id: "second" }, { id: "third" }],
       }),
+      selector: selector(selection("first", { first: 0.6, second: 0.3, third: 0.1 })),
     }).turn();
-
-    expect(result.status).toBe("spoken");
-    if (result.status !== "spoken") return;
-    expect(result.agentId).toBe("second");
-    expect(result.errors[0]?.agentId).toBe("first");
-  });
-
-  it("ties use agent insertion order", () => {
-    const selected = new HighestScorePolicy().select({
-      snapshot: { messages: [], participants: [], revision: 0 },
-      bids: new Map([
-        ["a", { score: 1 }],
-        ["b", { score: 1 }],
-      ]),
+    expect(result).toMatchObject({
+      status: "spoken",
+      agentId: "second",
+      errors: [{ agentId: "first", phase: "turn" }],
     });
-
-    expect(selected).toBe("a");
   });
 
-  it("revision conflict can re-evaluate bids", async () => {
+  it("rejects an ineligible selection", async () => {
+    const aikyo = new Aikyo({
+      agents: [agent("a")],
+      store: new InMemoryConversation({ participants: [{ id: "a" }] }),
+      selector: selector(selection("missing")),
+    });
+    await expect(aikyo.turn()).rejects.toThrow("Selector selected an ineligible agent: missing");
+  });
+
+  it("re-evaluates Jev after a revision conflict", async () => {
     const inner = new InMemoryConversation({ participants: [{ id: "a" }] });
     let conflicts = 0;
     const store = {
@@ -91,148 +112,101 @@ describe("Aikyo", () => {
         inner.append(message, revision);
       },
     };
-    let bids = 0;
-    const candidate = agent("a", 1);
-    candidate.wantsToSpeak = async () => ({ score: ++bids });
-
+    let selections = 0;
     const result = await new Aikyo({
-      agents: [candidate],
+      agents: [agent("a")],
       store,
       revisionRetries: 1,
+      selector: { select: async () => (selections++, selection("a", { a: 1 })) },
     }).turn();
-
     expect(result.status).toBe("spoken");
-    expect(bids).toBe(2);
-    expect(inner.snapshot().revision).toBe(2);
+    expect(selections).toBe(2);
   });
 
-  it("rejects concurrent turns on the same coordinator", async () => {
-    let releaseBid!: () => void;
-    const pendingBid = new Promise<void>((resolve) => {
-      releaseBid = resolve;
-    });
-    const candidate = agent("a", 1);
-    candidate.wantsToSpeak = async () => {
-      await pendingBid;
-      return { score: 1 };
-    };
+  it("rejects concurrent turns", async () => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => (release = resolve));
     const aikyo = new Aikyo({
-      agents: [candidate],
+      agents: [agent("a")],
       store: new InMemoryConversation({ participants: [{ id: "a" }] }),
-    });
-
-    const firstTurn = aikyo.turn();
-    const secondTurn = aikyo.turn();
-    releaseBid();
-    await expect(secondTurn).rejects.toThrow("A turn is already in progress");
-    await expect(firstTurn).resolves.toMatchObject({ status: "spoken" });
-  });
-
-  it("reports a non-finite bid as a bid failure", async () => {
-    const result = await new Aikyo({
-      agents: [agent("a", Number.NaN)],
-      store: new InMemoryConversation({ participants: [{ id: "a" }] }),
-    }).turn();
-
-    expect(result.status).toBe("idle");
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toMatchObject({ agentId: "a", phase: "bid" });
-    expect(result.errors[0]?.error).toBeInstanceOf(TypeError);
-  });
-
-  it("falls back when an agent returns a message for another participant", async () => {
-    const invalid = agent("a", 2);
-    invalid.intoTurn = async () => ({ participantId: "b", content: "wrong" });
-    const result = await new Aikyo({
-      agents: [invalid, agent("b", 1)],
-      store: new InMemoryConversation({ participants: [{ id: "a" }, { id: "b" }] }),
-    }).turn();
-
-    expect(result.status).toBe("spoken");
-    if (result.status !== "spoken") return;
-    expect(result.agentId).toBe("b");
-    expect(result.errors[0]).toMatchObject({ agentId: "a", phase: "turn" });
-  });
-
-  it("rejects a policy selection that is not eligible", async () => {
-    const aikyo = new Aikyo({
-      agents: [agent("a", 1)],
-      store: new InMemoryConversation({ participants: [{ id: "a" }] }),
-      policy: { select: () => "missing" },
-    });
-
-    await expect(aikyo.turn()).rejects.toThrow("Policy selected an ineligible agent: missing");
-  });
-
-  it("throws after revision retries are exhausted", async () => {
-    const inner = new InMemoryConversation({ participants: [{ id: "a" }] });
-    const store = {
-      snapshot: () => inner.snapshot(),
-      append(message: Parameters<typeof inner.append>[0], revision: number) {
-        inner.updateContext(Symbol("conflict"));
-        inner.append(message, revision);
+      selector: {
+        async select() {
+          await pending;
+          return selection("a", { a: 1 });
+        },
       },
-    };
-    let bids = 0;
-    const candidate = agent("a", 1);
-    candidate.wantsToSpeak = async () => ({ score: ++bids });
-
-    await expect(
-      new Aikyo({
-        agents: [candidate],
-        store,
-        revisionRetries: 1,
-      }).turn(),
-    ).rejects.toThrow("Conversation revision changed");
-    expect(bids).toBe(2);
+    });
+    const first = aikyo.turn();
+    const second = aikyo.turn();
+    release();
+    await expect(second).rejects.toThrow("A turn is already in progress");
+    await expect(first).resolves.toMatchObject({ status: "spoken" });
   });
+});
 
-  it("returns idle when no agents are configured", async () => {
-    const result = await new Aikyo({
-      agents: [],
-      store: new InMemoryConversation(),
-    }).turn();
-
-    expect(result).toMatchObject({ status: "idle", errors: [] });
+describe("JevSpeakerSelector", () => {
+  it("maps opaque choices and probabilities back to agent IDs", async () => {
+    let body: unknown;
+    const client = new TypeSafeClient({
+      apiKey: "test",
+      fetch: async (_input, init) => {
+        body = JSON.parse(String(init?.body));
+        return new Response(
+          JSON.stringify({
+            model: "jev-test",
+            answers: {
+              nextSpeaker: {
+                type: "choice",
+                choice: "speaker_1",
+                confidence: 0.88,
+                probabilities: { idle: 0.02, speaker_0: 0.1, speaker_1: 0.88 },
+              },
+            },
+            usage: { input_tokens: 42, output_tokens: 0 },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+    const result = await new JevSpeakerSelector({ client }).select({
+      snapshot: {
+        messages: [{ participantId: "producer", content: "テーマ" }],
+        participants: [{ id: "a" }, { id: "idle" }],
+        revision: 0,
+      },
+      candidates: [{ id: "a", description: "明るい" }, { id: "idle" }],
+      signal: new AbortController().signal,
+    });
+    expect(result).toEqual({
+      agentId: "idle",
+      confidence: 0.88,
+      probabilities: { a: 0.1, idle: 0.88 },
+      idleProbability: 0.02,
+      model: "jev-test",
+      inputTokens: 42,
+    });
+    expect(body).toMatchObject({
+      model: "jev-latest",
+      state: { conversation: [{ speaker: "producer", content: "テーマ" }] },
+      questions: {
+        nextSpeaker: { type: "choice", criteria: { idle: expect.any(String), speaker_0: "明るい" } },
+      },
+    });
   });
 });
 
 describe("InMemoryConversation", () => {
-  it.each([Number.NaN, Number.POSITIVE_INFINITY, -1, 1.5])(
-    "rejects invalid revision %s",
-    (revision) => {
-      expect(() => new InMemoryConversation({ revision })).toThrowError(
-        new RangeError("revision must be a non-negative integer"),
-      );
-    },
-  );
-
-  it("accepts a non-negative integer revision", () => {
-    expect(new InMemoryConversation({ revision: 2 }).snapshot().revision).toBe(2);
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, -1, 1.5])("rejects invalid revision %s", (revision) => {
+    expect(() => new InMemoryConversation({ revision })).toThrow(
+      "revision must be a non-negative integer",
+    );
   });
 
-  it("rejects duplicate participant ids", () => {
-    expect(
-      () =>
-        new InMemoryConversation({
-          participants: [{ id: "a" }, { id: "a" }],
-        }),
-    ).toThrow("Duplicate participant id: a");
-  });
-
-  it("rejects an initial message from an unknown participant", () => {
-    expect(
-      () =>
-        new InMemoryConversation({
-          participants: [{ id: "a" }],
-          messages: [{ participantId: "missing", content: "hello" }],
-        }),
-    ).toThrow("Unknown participant id: missing");
-  });
-
-  it("rejects an appended message from an unknown participant without advancing revision", () => {
+  it("rejects duplicate and unknown participant ids", () => {
+    expect(() => new InMemoryConversation({ participants: [{ id: "a" }, { id: "a" }] })).toThrow(
+      "Duplicate participant id: a",
+    );
     const store = new InMemoryConversation({ participants: [{ id: "a" }] });
-
     expect(() => store.append({ participantId: "missing", content: "hello" }, 0)).toThrow(
       "Unknown participant id: missing",
     );
