@@ -60,9 +60,18 @@ const aikyo = new Aikyo({
     console.log(`[timing] ${phase}=${durationMs.toFixed(1)}ms${speaker}${retry}`);
   },
   agents: [
-    new OpenAICompatibleAgent("ミカ", "明るく好奇心旺盛で、身近な例を話す人です。"),
-    new OpenAICompatibleAgent("ケン", "落ち着いた聞き上手で、少し違う視点を添える人です。"),
-    new OpenAICompatibleAgent("ソラ", "ユーモアがあり、話を広げる素朴な疑問を投げかける人です。"),
+    new OpenAICompatibleAgent(
+      "ミカ",
+      "生活実装の担当です。抽象的な話を、家事、仕事、買い物、家族など日常の具体例に落とし込み、実際に使う人の便利さや面倒さを話します。現実の利用場面やユーザー体験を具体化すべきときに選んでください。",
+    ),
+    new OpenAICompatibleAgent(
+      "ケン",
+      "検証とリスク分析の担当です。主張の前提、実現可能性、費用、プライバシー、安全性、格差などを冷静に点検します。楽観論に条件や反例を加え、議論の精度を上げるべきときに選んでください。",
+    ),
+    new OpenAICompatibleAgent(
+      "ソラ",
+      "未来構想と問いかけの担当です。既存の前提を外した意外な未来像や新しい可能性を提示し、少しユーモアのある問いで議論を次のテーマへ広げます。会話が無難にまとまりそうなときや発想を飛躍させたいときに選んでください。",
+    ),
   ],
 });
 
